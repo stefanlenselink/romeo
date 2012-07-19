@@ -1,4 +1,6 @@
-romeo
-=====
+To compile:
 
-Fork of the http://romeo.sourceforge.net/ Project on github
+% make
+
+For instructions on using Romeo, please visit http://romeo.sourceforge.net/.
+
