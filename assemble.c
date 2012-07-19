@@ -20,7 +20,7 @@
 #include "Crc.h"
 #include "byte_swap.h"
 
-
+#include "MemoryPrv.h"
 static void InitializeFreeChunk	(MemChunkHeaderUnionType*	pChunk,
 								 UInt16						version,
 								 UInt32						size)
@@ -61,8 +61,15 @@ static void InitializeHeap (MemHeapHeaderUnionType*	hdr,
 	// Initialize this entire heap to 0.
 	memset (hdr, 0, size);	//memUSizeOfHeapHeader(ver));
 	
-	memUHeapSize (hdr, ver) = size;
+	if(ver > 2){
+		((MemHeapHeaderPtr)hdr)->size = size;	
+	}else if (ver > 1){
+		((Mem2HeapHeaderPtr)hdr)->size = size;
+	}else{
+		((Mem1HeapHeaderPtr)hdr)->size = size;
+	}
 	
+
 	memUHeapFlags(hdr) |= memHeapFlagReadOnly;
 	switch (ver)
 	{
@@ -87,7 +94,11 @@ static void InitializeHeap (MemHeapHeaderUnionType*	hdr,
 						 memUSizeOfHeapTerminator(ver));
 	if (ver > 2)
 	{
-		memUChunkHOffset(pChunk, chunkVer) = memUChunkSize(pChunk, chunkVer) >> 1;
+		if(chunkVer > 1){
+			((MemChunkHeaderPtr)hdr)->hOffset = ((MemChunkHeaderPtr)hdr)->hOffset >> 1;
+		}else{
+			((Mem1ChunkHeaderPtr)hdr)->hOffset = ((Mem1ChunkHeaderPtr)hdr)->hOffset >> 1;
+		}
 	}
 }
 
@@ -554,10 +565,15 @@ void* HeapAlloc	(MemHeapHeaderUnionType*	pHeapHdr,
 
 	if (memUChunkHOffset(oldFree, ver) && newsize)
 	{
-		// Only update the hOffset (pointer to next free chunk) if
+			// Only update the hOffset (pointer to next free chunk) if
 		// the hOffset of the old free chunk was set.
-		memUChunkHOffset(newFree, ver) = memUChunkHOffset(oldFree, ver) -
+		if(ver>1){
+		  ((MemChunkHeaderPtr)newFree)->hOffset = memUChunkHOffset(oldFree, ver) -
 		                                 ((roundedSize + memUSizeOfChunkHeader(ver)) >>1);
+		}else{
+		  ((Mem1ChunkHeaderPtr)newFree)->hOffset = memUChunkHOffset(oldFree, ver) -
+		                                 ((roundedSize + memUSizeOfChunkHeader(ver)) >>1);
+		}
 	}
 
 
@@ -575,10 +591,19 @@ void* HeapAlloc	(MemHeapHeaderUnionType*	pHeapHdr,
 	if (prevFree)
 	{
 		// The previous free chunk now needs to point to the new free chunk.
-		if (newsize)
-			memUChunkHOffset(prevFree, ver) = ((UInt32)newFree - (UInt32)prevFree) >> 1;
-		else
-			memUChunkHOffset(prevFree, ver) += memUChunkHOffset(oldFree,ver);
+		if (newsize){
+		if(ver>1){
+		  ((MemChunkHeaderPtr)prevFree)->hOffset = ((UInt32)newFree - (UInt32)prevFree) >> 1;
+		}else{
+		  ((Mem1ChunkHeaderPtr)prevFree)->hOffset = ((UInt32)newFree - (UInt32)prevFree) >> 1;
+		}
+		}else{
+		if(ver>1){
+		  ((MemChunkHeaderPtr)prevFree)->hOffset += memUChunkHOffset(oldFree,ver);
+		}else{
+		  ((Mem1ChunkHeaderPtr)prevFree)->hOffset += memUChunkHOffset(oldFree,ver); 
+		}
+		}
 	}
 
 
@@ -641,13 +666,25 @@ MergeIfAdjacent		(MemChunkHeaderUnionType*	pFirst,
 		memUChunkNext(pFirst,ver) == pSecond)
 	{
 		/* Free, contiguous and neither are terminators */
-		if (memUChunkHOffset(pSecond,ver) != 0)
-			memUChunkHOffset(pFirst,ver) += memUChunkHOffset(pSecond,ver);
-		else
-			memUChunkHOffset(pFirst,ver) = 0;
-
-		memUChunkSize(pFirst,ver) += memUChunkSize(pSecond,ver);
-
+		if (memUChunkHOffset(pSecond,ver) != 0){
+		  		if(ver>1){
+		  ((MemChunkHeaderPtr)pFirst)->hOffset += memUChunkHOffset(pSecond,ver);
+		}else{
+		  ((Mem1ChunkHeaderPtr)pFirst)->hOffset += memUChunkHOffset(pSecond,ver);
+		}
+		}else{
+		  		  		if(ver>1){
+		  ((MemChunkHeaderPtr)pFirst)->hOffset = 0;
+		}else{
+		  ((Mem1ChunkHeaderPtr)pFirst)->hOffset = 0;
+		}
+		}
+		if(ver>1){
+		  ((MemChunkHeaderPtr)pFirst)->size += memUChunkSize(pSecond,ver);
+		}else{
+		  ((Mem1ChunkHeaderPtr)pFirst)->size += memUChunkSize(pSecond,ver);
+		}
+		
 		return (1);
 	}
 
@@ -705,19 +742,33 @@ void	ROMfree		(ROMPtr			pROM,
 	if ((! pFreeChunk) || (pFreeChunk > pChunk))
 	{
 		// This new free chunk will be the first one on the free list.
-		if (pFreeChunk)
-			memUChunkHOffset(pChunk,chunkVer) = ((UInt32)pFreeChunk - (UInt32)pChunk)
-																			>> 1;
-
+		if (pFreeChunk){
+		  
+		  if(chunkVer>1){
+		  ((MemChunkHeaderPtr)pChunk)->hOffset = ((UInt32)pFreeChunk - (UInt32)pChunk);
+		}else{
+		  ((Mem1ChunkHeaderPtr)pChunk)->hOffset = ((UInt32)pFreeChunk - (UInt32)pChunk) >> 1;
+		}
+		}
 		if (heapVer > 2)
 		{
-			if (! pFreeChunk)
+			if (! pFreeChunk){
 				// In version 3 and above, the final free chunk points
 				// to the heap terminator.
-				memUChunkHOffset(pChunk,chunkVer) = ((UInt32)pHeap +
+				if(chunkVer>1){
+		  ((MemChunkHeaderPtr)pChunk)->hOffset = ((UInt32)pHeap +
 				                                     memUHeapSize(pHeap, heapVer) -
 													 memUSizeOfHeapTerminator(chunkVer) -
 													 (UInt32)pChunk) >> 1;
+		}else{
+		  ((Mem1ChunkHeaderPtr)pChunk)->hOffset = ((UInt32)pHeap +
+				                                     memUHeapSize(pHeap, heapVer) -
+													 memUSizeOfHeapTerminator(chunkVer) -
+													 (UInt32)pChunk) >> 1;
+		}
+			}
+													 
+													 
 
 			pHeap->header.ver3.firstFreeChunkOffset = ((UInt32)pChunk - (UInt32)pHeap)>>1;
 		}
@@ -741,8 +792,13 @@ void	ROMfree		(ROMPtr			pROM,
 			hOffset = ((UInt32)memUChunkNextFree(pFreeChunk,chunkVer) - (UInt32)pChunk)
 											>> 1;
 
-		memUChunkHOffset(pChunk, chunkVer)    = hOffset;
-		memUChunkHOffset(pFreeChunk,chunkVer) = ((UInt32)pChunk - (UInt32)pFreeChunk)>>1;
+		if(chunkVer>1){
+		  ((MemChunkHeaderPtr)pChunk)->hOffset = hOffset;
+		  ((MemChunkHeaderPtr)pFreeChunk)->hOffset = ((UInt32)pChunk - (UInt32)pFreeChunk)>>1;
+		}else{
+		  ((Mem1ChunkHeaderPtr)pChunk)->hOffset = hOffset;
+		  ((Mem1ChunkHeaderPtr)pFreeChunk)->hOffset = ((UInt32)pChunk - (UInt32)pFreeChunk)>>1;
+		}
 	}
 
 	MergeIfAdjacent(pChunk, memUChunkNextFree(pChunk,chunkVer), chunkVer);
