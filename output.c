@@ -157,6 +157,7 @@ void	Output_StorageHeader	(StorageHeaderPtr	pStore,
 					 "  First Heap              0x%08lX\n"
 					 "  Dynamic Heap Size       0x%08lX\n"
 					 "  First RAM block         0x%08lX\n"
+					 "  Init Code Offset 3      0x%08lX\n"
 					 "  CRC                     0x%08lX\n",
 					 Adjust((UInt32)pStore, offsetAdj),
 					 (pStore->signature),
@@ -176,6 +177,7 @@ void	Output_StorageHeader	(StorageHeaderPtr	pStore,
 					 Adjust(pStore->rsvSpace, offsetAdj),
 					 Adjust(pStore->dynHeapSpace, offsetAdj),
 					 (pStore->firstRAMBlockSize),
+					 Adjust(pStore->initCodeOffset3, offsetAdj),
 					 (pStore->crc));
 
 	if (bShowNV)
@@ -237,6 +239,7 @@ void	Output_MemChunkHeader	(MemChunkHeaderUnionType*	pChunk,
 					 (memUChunkOwner(pChunk,version) == memOwnerMasterPtrTbl
 					  	? "[MPTbl]" : ""))))),
 					 memUChunkHOffset(pChunk,version));
+	fflush (stdout);
 }
 
 void	Output_MemChunks	(MemChunkHeaderUnionType*	pChunk,

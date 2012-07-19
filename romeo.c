@@ -3,8 +3,20 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+/*
+ * This Cygwin patch is due to Isaac Salzman
+ */
+#ifndef __CYGWIN
 #include <errno.h>
+#else
+#include <sys/errno.h>
+#define sys_errlist _sys_errlist
+#endif /* __CYGWIN */
+#include <stdarg.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
+#include "version.h"
 #include "opts_parse.h"
 #include "rom.h"
 #include "os_structs.h"
@@ -12,6 +24,8 @@
 #include "assemble.h"
 #include "output.h"
 #include "utils.h"
+#include "meta_info.h"
+
 
 #define	SET_D(v)												\
 	(v) = (opt_d.optidex != 0 || opt_V.optidex !=0) ?			\
@@ -43,18 +57,29 @@
  ******************************************************************************/
 static char*	progName		= NULL;
 
+static opt_info	opt_X			= EMPTY_OPT_INFO;
+static opt_info	opt_B			= EMPTY_OPT_INFO;
 static opt_info	opt_a			= EMPTY_OPT_INFO;
 static opt_info	  opt_aR		= EMPTY_OPT_INFO;
+static opt_info	  opt_ar		= EMPTY_OPT_INFO;
+static opt_info	  opt_ab		= EMPTY_OPT_INFO;
 static opt_info	  opt_al		= EMPTY_OPT_INFO;
+static opt_info	    opt_alh		= EMPTY_OPT_INFO;
+static opt_info	    opt_alp		= EMPTY_OPT_INFO;
 static opt_info	  opt_as		= EMPTY_OPT_INFO;
+static opt_info	    opt_ash		= EMPTY_OPT_INFO;
+static opt_info	    opt_asp		= EMPTY_OPT_INFO;
 static opt_info	  opt_ao		= EMPTY_OPT_INFO;
 static opt_info	  opt_af		= EMPTY_OPT_INFO;
 static opt_info	  opt_aF		= EMPTY_OPT_INFO;
+static opt_info	  opt_an		= EMPTY_OPT_INFO;
+static opt_info	  opt_aL		= EMPTY_OPT_INFO;
 static opt_info	opt_r			= EMPTY_OPT_INFO;
 static opt_info	opt_p			= EMPTY_OPT_INFO;
 static opt_info	opt_x			= EMPTY_OPT_INFO;
 static opt_info	  opt_xl		= EMPTY_OPT_INFO;
 static opt_info	  opt_xs		= EMPTY_OPT_INFO;
+static opt_info	  opt_xm		= EMPTY_OPT_INFO;
 static opt_info	opt_v			= EMPTY_OPT_INFO;
 static opt_info	  opt_vl		= EMPTY_OPT_INFO;
 static opt_info	  opt_vs		= EMPTY_OPT_INFO;
@@ -65,7 +90,52 @@ static opt_info	opt_d			= EMPTY_OPT_INFO;
 static opt_info	opt_D			= EMPTY_OPT_INFO;
 static opt_info	opt_H			= EMPTY_OPT_INFO;
 static opt_info	opt_V			= EMPTY_OPT_INFO;
+static opt_info	opt_version		= EMPTY_OPT_INFO;
 static opt_info	opt_files		= EMPTY_OPT_INFO;
+
+static parsed_opts		al_subopts[]= { {
+								OPT_NOT_MODAL,
+								"H", "Header",
+
+								"Generate a large ROM with given card header version",
+								{ "<version>", 1, 1, 1 },
+
+								NULL,
+								&opt_alh
+							  },
+							  { OPT_NOT_MODAL,
+								"P", "Heap",
+
+								"Generate a large ROM with given heap header version",
+								{ "<version>", 1, 1, 1 },
+
+								NULL,
+								&opt_alp
+							  },
+							  NULL_OPTS	};
+
+static parsed_opts		as_subopts[]= { {
+								OPT_NOT_MODAL,
+								"S", "header",
+
+								"Generate a small ROM with given card header version",
+								{ "<version>", 1, 1, 1 },
+
+								NULL,
+								&opt_ash
+							  },
+							  {
+								OPT_NOT_MODAL,
+								"p", "heap",
+
+								"Generate a small ROM with given heap header version",
+								{ "<version>", 1, 1, 1 },
+
+								NULL,
+								&opt_asp
+							  },
+							  NULL_OPTS	};
+
 
 
 static parsed_opts		a_subopts[]	= { {
@@ -80,28 +150,24 @@ static parsed_opts		a_subopts[]	= { {
 							  },
 							  {
 								OPT_NOT_MODAL,
-								"s", "small",
+								"r", "romBase",
 
-								"Include a small ROM composed of the given PRC files.  The size "
-								"of the small ROM may be specified using the option modifier.  "
-								"e.g. '-l:<size>' or '--small:<size>'.",
-								{ "<file>", 1, 1, ARGS_INFINITE },
+								"Create a ROM image at the given base address.",
+								{ "<base>", 1, 1, 1 },
 
 								NULL,
-								&opt_as
+								&opt_ar
 						      },
 							  {
 								OPT_NOT_MODAL,
-								"l", "large",
+								"b", "bigRomOffset",
 
-								"Include a large ROM composed of the given PRC files.  The size "
-								"of the large ROM may be specified using the option modifier.  "
-								"e.g. '-l:<size>' or '--large:<size>'.",
-								{ "<file>", 1, 1, ARGS_INFINITE },
+								"Place the big rom at the given offset from the rom base.",
+								{ "<offset>", 1, 1, 1 },
 
 								NULL,
-								&opt_al,
-							  },
+								&opt_ab
+						      },
 							  {
 								OPT_NOT_MODAL,
 								"f", "format_small",
@@ -132,7 +198,50 @@ static parsed_opts		a_subopts[]	= { {
 								NULL,
 								&opt_ao
 						      },
-						      NULL_OPTS  };
+							  {
+								OPT_NOT_MODAL,
+								"n", "non-ez",
+
+								"Generate a non-ez ROM",
+								NULL_ARG_INFO,
+
+								NULL,
+								&opt_an
+							  },
+							  {
+								OPT_NOT_MODAL,
+								"L", "locale",
+
+								"Generate a ROM for the given locale",
+								{ "<country>", 1, 1, 1 },
+								NULL,
+								&opt_aL
+							  },
+							  {
+								OPT_NOT_MODAL,
+								"s", "small",
+
+								"Include a small ROM composed of the given PRC files.  The size "
+								"of the small ROM may be specified using the option modifier.  "
+								"e.g. '-l:<size>' or '--small:<size>'.",
+								{ "<file>", 1, 1, ARGS_INFINITE },
+
+								as_subopts,
+								&opt_as
+						      },
+							  {
+								OPT_NOT_MODAL,
+								"l", "large",
+
+								"Include a large ROM composed of the given PRC files.  The size "
+								"of the large ROM may be specified using the option modifier.  "
+								"e.g. '-l:<size>' or '--large:<size>'.",
+								{ "<file>", 1, 1, ARGS_INFINITE },
+
+								al_subopts,
+								&opt_al,
+							  },
+							  NULL_OPTS  };
 
 static parsed_opts		x_subopts[]	= { {
 								OPT_NOT_MODAL,
@@ -157,6 +266,17 @@ static parsed_opts		x_subopts[]	= { {
 
 								NULL,
 								&opt_xs,
+						      },
+							  {
+								OPT_NOT_MODAL,
+								"m", "meta-data",
+
+								"Extract ROM metadata.  Files will be created with the "
+								"given <basename>.",
+								NULL_ARG_INFO,	//{ "<basename>", 1, 1, 1},
+
+								NULL,
+								&opt_xm,
 						      },
 						      NULL_OPTS  };
 
@@ -197,7 +317,28 @@ static parsed_opts		opts[]		= {
 
 							  /************************************************
 							   * Modal options
-							   */
+		A				   */
+							  {
+								OPT_MODAL,
+								"X", "rip",
+
+								"RIP small and large PRCs from ROM and keep ROM metadata "
+								"(useful for rebuilding a ROM with -B with a"
+								" minimum of args, currently not implemented)",
+								NULL_ARG_INFO,
+								NULL,
+								&opt_X
+							  },
+							  {
+								OPT_MODAL,
+								"B", "rebuild",
+
+								"Rebuild a ROM from existing PRCs and metadata, "
+								"currently not implemented",
+								{ "<name of the original ROM>", 1, 1, 1 },
+								NULL,
+								&opt_B
+							  },
 							  {
 								OPT_MODAL,
 								"a", "assemble:create",
@@ -335,13 +476,66 @@ static parsed_opts		opts[]		= {
 								NULL,
 								&opt_V
 						      },
+							  {
+								OPT_NOT_MODAL,
+								NULL, "version",
+
+								"Display the version of Romeo",
+								NULL_ARG_INFO,
+
+								NULL,
+								&opt_version
+						      },
 						      NULL_OPTS  };
+
+
+/*
+ * Display a system error message of the form:
+ * 	<user output> <system errno>: <system error message>
+ */
+void	SysError	(char*	fmt, ...)
+{
+	//extern const char*	sys_errlist[];
+	//extern int			sys_nerr;
+	//extern int			errno;
+	va_list	ap;
+	int		err	= errno;
+
+	fprintf (stderr, "*** ");
+	if (err != 0)
+		fprintf (stderr, "ERROR: ");
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+
+	if (err != 0)
+	{
+		char* errmsg = strerror (err);
+		if ((err >= 0) && errmsg)
+			fprintf (stderr, " %d: %s", err, errmsg);
+		else
+			fprintf (stderr, " %d: error number OUT OF RANGE", err);
+	}
+
+	fprintf (stderr, "\n");
+
+	va_end(ap);
+}
+
+int	Version(FILE*	pOut)
+{
+	fprintf (pOut, "%s\n", VERSION);
+	fflush (pOut);
+
+	return 0;
+}
 
 void	Usage(char*	stat)
 {
 	int		idex;
 	char*	prog	= strrchr(progName, '/');
 	char*	rest	= "[options] <image>...";
+	FILE*	pOut	= stdout;
 
 	if (! prog)
 		prog = progName;
@@ -349,24 +543,37 @@ void	Usage(char*	stat)
 		prog++;
 
 	if (stat && *stat)
-		opts_fprintf(stderr, opts,
-		             "\nError: *** %s\n\nUsage: %s %s\n",
+		pOut = stderr;
+
+	fprintf(pOut, "\nRomeo ");
+	Version(pOut);
+
+	if (stat && *stat)
+		opts_fprintf(pOut, opts,
+		             "\n*** ERROR: %s\n\nUsage: %s %s\n",
 		             stat, prog, rest);
 	else
-		opts_fprintf(stderr, opts,
+		opts_fprintf(pOut, opts,
 		             "\nUsage: %s %s\n", prog, rest);
 
-	fprintf (stderr, " Available PalmOS versions are:\n   ");
-	for (idex = 0; idex < sizeof(ROMVers)/sizeof(ROMVers[0]); idex++)
+	fprintf (pOut, " Available PalmOS versions are:\n   ");
+	for (idex = 0; idex < numROMVers; idex++)
 	{
 		UInt16	major	= (ROMVers[idex].palmOSVer >> 8) & 0xFF;
 		UInt16	minor	= ROMVers[idex].palmOSVer & 0xFF;
 
-		fprintf (stderr, "%s%x.%x", (idex ? ", " : ""), major, minor);
+		fprintf (pOut, "%s%x.%x", (idex ? ", " : ""), major, minor);
 	}
-	fprintf (stderr, "\n\n");
+	fprintf (pOut, "\n\n");
 
-	fflush (stderr);
+	fprintf (pOut, " Available locales are:\n   ");
+	for (idex = 0; idex < romNumLocales; idex++)
+	{
+		fprintf (pOut, "%s%s", (idex ? ", " : ""), Locales[idex].name);
+	}
+	fprintf (pOut, "\n\n");
+	
+	fflush (pOut);
 }
 
 int	Assemble	()
@@ -397,6 +604,14 @@ int	Assemble	()
 			Usage(error);
 			return(1);
 		}
+	}
+
+	if (opt_aL.optidex)
+	{
+		Locale* pLocale = &(Locales[0]);
+		pLocale = LocateLocaleByName (opt_aL.optarg[0]);
+		pVersion->nvparams_localeLanguage = pLocale->language;
+		pVersion->nvparams_localeCountry = pLocale->country;
 	}
 
 	if ((opt_al.optidex) && (opt_al.optmod))
@@ -439,24 +654,49 @@ int	Assemble	()
 		}
 	}
 
+	if (opt_ar.optidex)
+	{
+		UInt32 romBase = strtoul (opt_ar.optarg[0], NULL, 0);
+		if (romBase)
+			pVersion->ROM_base = romBase;
+		else
+		{
+			sprintf (error, "Please specify the rom base (-r <base>) as an integer");
+			Usage(error);
+			return 1;
+		}
+	}
+	
+	if (opt_ab.optidex)
+	{
+		UInt32 bigRomOffset = strtoul (opt_ab.optarg[0], NULL, 0);
+		if (bigRomOffset)
+			pVersion->card_bigROMOffset = bigRomOffset;
+		else
+		{
+			sprintf (error, "Please specify the big rom offset (-b <offset>) as an integer");
+			Usage(error);
+			return 1;
+		}
+	}
+		
 	if (opt_af.optidex)
 	{
-		pVersion->small_layout		= opt_af.optarg[0];
-		pVersion->small_addLayout	= opt_af.optarg[0];
+		strncpy (pVersion->small_layout, opt_af.optarg[0], MAX_LAYOUT_LEN);
+		strncpy (pVersion->small_addLayout, opt_af.optarg[0], MAX_LAYOUT_LEN);
 	}
 
 	if (opt_aF.optidex)
 	{
-		pVersion->big_layout	= opt_aF.optarg[0];
-		pVersion->big_addLayout = opt_aF.optarg[0];
+		strncpy (pVersion->big_layout, opt_aF.optarg[0], MAX_LAYOUT_LEN);
+		strncpy (pVersion->big_addLayout, opt_aF.optarg[0], MAX_LAYOUT_LEN);
 	}
 
 	if (opt_ao.optidex)
 	{
-		if ((hROMOut = open(opt_ao.optarg[0], O_RDWR | O_CREAT | O_TRUNC, 0666)) < 0)
+		if ((hROMOut = open(opt_ao.optarg[0], O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0666)) < 0)
 		{
-			fprintf (stderr, "*** Error opening ROM output file [%s]: %d - %s\n",
-							opt_ao.optarg[0], errno, sys_errlist[errno]);
+			SysError("Cannot open ROM output file '%s'", opt_ao.optarg[0]);
 			return(0);
 		}
 	}
@@ -466,31 +706,41 @@ int	Assemble	()
 		/*
 		 * Open the ROM file
 		 */
-		hROMIn = open(opt_aR.optarg[0], O_RDONLY);
+		hROMIn = open(opt_aR.optarg[0], O_RDONLY | O_BINARY);
 		if (hROMIn < 0)
 		{
-			fprintf (stderr, "*** Cannot open ROM file '%s'\n", 
-							opt_aR.optarg[0]);
+			SysError("Cannot open ROM file '%s'", opt_aR.optarg[0]);
 			return(1);
 		}
 	}
-	
+
 	if (opt_as.optidex || hROMIn)
 	{
+		UInt16 flags = RT_SMALL;
+		flags = flags | (opt_an.optidex ? RT_NON_EZ : 0);
+
 		if (hROMIn)
 		{
-			pROM = ReadROM (hROMIn, RT_SMALL);
+			pROM = ReadROM (hROMIn, flags);
 		}
 		else
 		{
-			pROM = InitializeROM(pVersion, RT_SMALL);
+			UInt16 old_flags = 0;
+			if (opt_asp.optidex)
+			{
+				old_flags = pVersion->heap_flags;
+				pVersion->heap_flags = atoi (opt_asp.optarg[0]);
+			}
+			pROM = InitializeROM(pVersion, flags);
+			if (old_flags)
+				pVersion->heap_flags = old_flags;
 		}
 			
 		if (pROM)
 		{
 			if (AddPRCs (pROM, opt_as.optarg_cnt, opt_as.optarg, 0) != opt_as.optarg_cnt)
 			{
-				fprintf (stderr, "*** Error adding PRCs to small ROM\n");
+				SysError("Cannot add PRCs to small ROM");
 				FreeROM (pROM);
 				return (0);
 			}
@@ -500,16 +750,18 @@ int	Assemble	()
 
 			fprintf (stderr, "\n");
 
+			if (opt_ash.optidex)
+				pROM->pCard->hdrVersion = atoi (opt_ash.optarg[0]);
 			if (! SetSystem(pROM))
 			{
-				fprintf (stderr, "*** Error setting up small ROM boot code initialization vectors\n");
+				SysError("Cannot set up small ROM boot code initialization vectors");
 				FreeROM (pROM);
 				return (0);
 			}
 
 			if (! WriteROM(pROM, hROMOut))
 			{
-				fprintf (stderr, "*** Error writing small ROM\n");
+				SysError("Cannot write small ROM");
 			}
 			fprintf (stderr, "\n");
 
@@ -517,19 +769,24 @@ int	Assemble	()
 		}
 		else if (! hROMIn)
 		{
-			fprintf (stderr, "*** Error creating small ROM\n");
+			SysError("Cannot create small ROM");
 		}
 	}
 		
 	if (opt_al.optidex || hROMIn)
 	{
+		UInt16 flags = RT_LARGE;
+		flags = flags | (opt_an.optidex ? RT_NON_EZ : 0);
+
 		if (hROMIn)
 		{
-			pROM = ReadROM (hROMIn, RT_LARGE);
+			pROM = ReadROM (hROMIn, flags);
 		}
 		else
 		{
-			pROM = InitializeROM(pVersion, RT_LARGE);
+			if (opt_alp.optidex)
+				pVersion->heap_flags = atoi (opt_alp.optarg[0]);
+			pROM = InitializeROM(pVersion, flags);
 		}
 
 		if (pROM)
@@ -541,8 +798,8 @@ int	Assemble	()
 
 			if (AddPRCs (pROM, opt_al.optarg_cnt, opt_al.optarg, 0) != opt_al.optarg_cnt)
 			{
-				fprintf (stderr, "*** Error adding PRCs to large ROM\n"
-								 "*** Try using -l:<size> to increase the available space\n");
+				SysError("Cannot add PRCs to large ROM\n"
+				         "Try using -l:<size> to increase the available space");
 				FreeROM (pROM);
 				return (0);
 			}
@@ -552,16 +809,20 @@ int	Assemble	()
 
 			fprintf (stderr, "\n");
 
+			if (opt_alh.optidex)
+				pROM->pCard->hdrVersion = atoi (opt_alh.optarg[0]);
+			if (opt_alp.optidex)
+				pROM->pVersion->heap_flags = atoi (opt_alp.optarg[0]);
 			if (! SetSystem(pROM))
 			{
-				fprintf (stderr, "*** Error setting up large ROM boot code initialization vectors\n");
+				SysError("Cannot set up large ROM boot code initialization vectors");
 				FreeROM (pROM);
 				return (0);
 			}
 
 			if (! WriteROM(pROM, hROMOut))
 			{
-				fprintf (stderr, "*** Error writing large ROM\n");
+				SysError("Cannot write large ROM");
 			}
 			fprintf (stderr, "\n");
 
@@ -569,13 +830,14 @@ int	Assemble	()
 		}
 		else if (hROMIn)
 		{
-			fprintf (stderr, "*** Error creating large ROM\n");
+			SysError("Cannot create large ROM");
 		}
 	}
 
 	return(0);
 }
 
+#if 0
 int	ViewRAM()
 {
 	int		idex;
@@ -591,7 +853,7 @@ int	ViewRAM()
 
 	if (! opt_files.optidex)
 	{
-		sprintf (error,"You must provided at least 1 file for processing.");
+		sprintf (error,"You must provide at least 1 file for processing.");
 		Usage(error);
 		return(1);
 
@@ -605,10 +867,10 @@ int	ViewRAM()
 		/*
 		 * Open the RAM file
 		 */
-		hRAM = open(pRAMName, O_RDONLY);
+		hRAM = open(pRAMName, O_RDONLY | O_BINARY);
 		if (hRAM < 0)
 		{
-			fprintf (stderr, "*** Cannot open RAM file '%s'\n", pRAMName);
+			SysError("Cannot open RAM file '%s'", pRAMName);
 			continue;
 		}
 
@@ -636,7 +898,7 @@ int	ViewRAM()
 		}
 		else
 		{
-			fprintf (stdout, "  *** Cannot read the RAM image from '%s'\n",
+			SysError("Cannot read the RAM image from '%s'",
 			         pRAMName);
 		}
 
@@ -645,23 +907,24 @@ int	ViewRAM()
 
 	return (0);
 }
+#endif
 
 int	ViewPRC()
 {
 	/************************************************************
 	 * View a PRC/database file
 	 */
-	PRCPtr	pPRC;
-	int		idex;
-	char	error[128];
-	UInt16	bShowDB			= 0;
+	PRCPtr		pPRC;
+	int			idex;
+	char		error[128];
+	UInt16		bShowDB			= 0;
 
 	SET_D(bShowDB);
 	if (bShowDB)	bShowDB++;
 
 	if (! opt_files.optidex)
 	{
-		sprintf (error,"You must provided at least 1 file for processing.");
+		sprintf (error,"You must provide at least 1 file for processing.");
 		Usage(error);
 		return(1);
 	}
@@ -675,7 +938,7 @@ int	ViewPRC()
 		}
 		else
 		{
-			fprintf (stderr, "*** Error reading PRC [%s]\n", opt_files.optarg[idex]);
+			SysError("Cannot reading PRC '%s'", opt_files.optarg[idex]);
 		}
 
 		FreePRC(pPRC);
@@ -684,24 +947,29 @@ int	ViewPRC()
 	return(0);
 }
 
-int	Extract()
+int	Extract (int hROMIn, int bVerbose)
 {
-	int		idex;
-	UInt32	RRFlags			= 0;
-	UInt16	bShowNV			= (UInt16)(opt_N.optidex != 0 || opt_V.optidex !=0);
-	UInt16	bShowHeap		= (UInt16)(opt_h.optidex != 0 || opt_V.optidex !=0);
-	UInt16	bShowChunks		= (UInt16)(opt_c.optidex != 0 || opt_V.optidex !=0);
-	UInt16	bExtract		= (UInt16)(opt_x.optidex != 0);
-	UInt16	bShowDB			= 0;
-	UInt16	bSmallROM		= 0;
-	UInt16	bLargeROM		= 0;
-	char	error[128];
+	int			idex;
+	UInt32		RRFlags			= 0;
+	UInt16		bShowNV			= (UInt16)(opt_N.optidex != 0 || opt_V.optidex !=0);
+	UInt16		bShowHeap		= (UInt16)(opt_h.optidex != 0 || opt_V.optidex !=0);
+	UInt16		bShowChunks		= (UInt16)(opt_c.optidex != 0 || opt_V.optidex !=0);
+	UInt16		bExtract		= (UInt16)(opt_x.optidex != 0);
+	UInt16		bShowDB			= 0;
+	UInt16		bSmallROM		= 0;
+	UInt16		bLargeROM		= 0;
+	UInt16		bMetaData		= 0;
+	ROMVersion*	smallVers		= NULL;
+	ROMVersion*	largeVers		= NULL;
+	ROMVersion*	mergeVers		= NULL;
+	char*		metaBaseName	= NULL;
+	char		error[128];
 
 	SET_D(bShowDB);
 
 	if (! opt_files.optidex)
 	{
-		sprintf (error, "You must provided at least 1 file for processing.");
+		sprintf (error, "You must provide at least 1 file for processing.");
 		Usage(error);
 		return(1);
 
@@ -711,6 +979,20 @@ int	Extract()
 	{
 		bSmallROM = (UInt16)(opt_xs.optidex != 0);
 		bLargeROM = (UInt16)(opt_xl.optidex != 0);
+		bMetaData = (UInt16)(opt_xm.optidex != 0);
+		if (bMetaData)
+		{
+			if (opt_xm.optarg)
+				metaBaseName = opt_xm.optarg[0];
+		}
+
+#if	0
+		if ((! bSmallROM) && (! bLargeROM))
+		{
+			bSmallROM = 1;
+			bLargeROM = 1;
+		}
+#endif
 	}
 	else if (opt_v.optidex)
 	{
@@ -718,7 +1000,7 @@ int	Extract()
 		bLargeROM = (UInt16)(opt_vl.optidex != 0);
 	}
 
-	if (! bSmallROM && ! bLargeROM)
+	if (! bSmallROM && ! bLargeROM && ! bMetaData)
 	{
 		bSmallROM = 1;
 		bLargeROM = 1;
@@ -733,10 +1015,13 @@ int	Extract()
 		/*
 		 * Open the ROM file
 		 */
-		hROM = open(pROMName, O_RDONLY);
+		if (hROMIn >= 0)
+			hROM = hROMIn;
+		else
+			hROM = open(pROMName, O_RDONLY | O_BINARY);
 		if (hROM < 0)
 		{
-			fprintf (stderr, "*** Cannot open ROM file '%s'\n", pROMName);
+			SysError("Cannot open ROM file '%s'", pROMName);
 			return(1);
 		}
 
@@ -745,22 +1030,26 @@ int	Extract()
 		/*
 		 * Process the Small ROM if requested.
 		 */
-		if (bSmallROM)
+		if (bSmallROM || bMetaData)
 		{
 			/************************************************************
 			 * View/Extract a small ROM
 			 */
-			fprintf (stdout, "\n======= Small ROM =======\n");
+			if (bVerbose)
+				fprintf (stdout, "\n======= Small ROM =======\n");
 			if ((pROM = ReadROM(hROM, RRFlags | RT_SMALL)))
 			{
-				//fprintf (stdout, "   PTR_base  [0x%08lX]\n", (UInt32)pROM->pROM);
-				fprintf (stdout, "   ROM_base  [0x%08lX]\n", pROM->ROM_base);
-				fprintf (stdout, "   Card_base [0x%08lX]\n", pROM->Card_base);
-				fprintf (stdout, "   File_base [0x%08lX]\n", pROM->File_base);
-				Output_ROM(pROM, (UInt32)(pROM->pROM),
-				           bShowNV, bShowHeap, bShowChunks, bShowDB);
+				if (bVerbose)
+				{
+					//fprintf (stdout, "   PTR_base  [0x%08lX]\n", (UInt32)pROM->pROM);
+					fprintf (stdout, "   ROM_base  [0x%08lX]\n", pROM->ROM_base);
+					fprintf (stdout, "   Card_base [0x%08lX]\n", pROM->Card_base);
+					fprintf (stdout, "   File_base [0x%08lX]\n", pROM->File_base);
+					Output_ROM(pROM, (UInt32)(pROM->pROM),
+					           bShowNV, bShowHeap, bShowChunks, bShowDB);
+				}
 
-				if (bExtract)
+				if (bExtract && bSmallROM)
 				{
 					TypeCtorPtr	pTCList		= NULL;
 					UInt32		nEntries	= 0;
@@ -779,36 +1068,45 @@ int	Extract()
 						free(pTCList);
 				}
 
+				if (bMetaData)
+				{
+					// Save the version data
+					smallVers = CollectVersion(pROM);
+				}
+
 				FreeROM(pROM);
 			}
 			else
 			{
-				fprintf (stdout, "  *** No Small ROM exists in '%s'\n",
-				         pROMName);
+				SysError("No Small ROM exists in '%s'", pROMName);
 			}
 		}
 
 
-		if (bLargeROM)
+		if (bLargeROM || bMetaData)
 		{
 			/************************************************************
 			 * View/Extract a large ROM
 			 */
-			fprintf (stdout, "\n======= Large ROM =======\n");
+			if (bVerbose)
+				fprintf (stdout, "\n======= Large ROM =======\n");
 			if ((pROM = ReadROM(hROM, RRFlags | RT_LARGE)))
 			{
-				//fprintf (stdout, "   PTR_base  [0x%08lX]\n", (UInt32)pROM->pROM);
-				fprintf (stdout, "   ROM_base  [0x%08lX]\n", pROM->ROM_base);
-				fprintf (stdout, "   Card_base [0x%08lX]\n", pROM->Card_base);
-				fprintf (stdout, "   File_base [0x%08lX]\n", pROM->File_base);
+				if (bVerbose)
+				{
+					//fprintf (stdout, "   PTR_base  [0x%08lX]\n", (UInt32)pROM->pROM);
+					fprintf (stdout, "   ROM_base  [0x%08lX]\n", pROM->ROM_base);
+					fprintf (stdout, "   Card_base [0x%08lX]\n", pROM->Card_base);
+					fprintf (stdout, "   File_base [0x%08lX]\n", pROM->File_base);
 
-				//Card_base - ROM_base == 0x8000
+					//Card_base - ROM_base == 0x8000
 
-				Output_ROM(pROM, (UInt32)(pROM->pROM) - pROM->File_base,
-								         //(pROM->Card_base - pROM->ROM_base),
-				           bShowNV, bShowHeap, bShowChunks, bShowDB);
+					Output_ROM(pROM, (UInt32)(pROM->pROM) - pROM->File_base,
+									         //(pROM->Card_base - pROM->ROM_base),
+					           bShowNV, bShowHeap, bShowChunks, bShowDB);
+				}
 
-				if (bExtract)
+				if (bExtract && bLargeROM)
 				{
 					TypeCtorPtr	pTCList		= NULL;
 					UInt32		nEntries	= 0;
@@ -827,24 +1125,539 @@ int	Extract()
 						free(pTCList);
 				}
 
+				if (bMetaData)
+				{
+					// Save the version data
+					largeVers = CollectVersion(pROM);
+				}
+				
 				FreeROM(pROM);
 			}
 			else
 			{
-				fprintf (stdout, "  *** No Large ROM exists in '%s'\n",
+				SysError("No Large ROM exists in '%s'",
 				         pROMName);
 			}
 		}
 
 		close(hROM);
+
+		if (bMetaData)
+		{
+			char	filename[MAX_FILENAME_LEN];
+			int		hMeta			= 0;
+
+			if (! metaBaseName)
+			{
+				metaBaseName = strrchr(pROMName, '/');
+				if (! metaBaseName)
+					metaBaseName = pROMName;
+				else
+					metaBaseName++;
+			}
+			
+			// Merge the version information we collected and save it off
+			mergeVers = MergeVersions (smallVers, largeVers);
+			if (! mergeVers)
+			{
+				SysError("Failed to merge version information.");
+				return (1);
+			}
+
+			// Write out the params data to the files...
+
+			
+			// Write out the meta-data file
+			sprintf (filename, "%s.romeo", metaBaseName);
+
+			hMeta = open (filename, O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0644);
+			if (hMeta < 0)
+			{
+				SysError("Failed to open metadata file %s.", filename);
+				return (1);
+			}
+			if (! Write_MetaInfo (hMeta, mergeVers))
+			{
+				SysError("Error writing metadata file %s.", filename);
+				return (1);
+			}
+			close (hMeta);
+
+			FreeROMVersion(mergeVers);
+			FreeROMVersion(smallVers);
+			FreeROMVersion(largeVers);
+		}
+		
 	}
 
 	return (0);
 }
 
+/*
+ * RIP a ROM - extract all PRCs along with META information that may be
+ *             used to properly reconstruct the ROM
+ */
+int RIP()
+{
+	char		absoluteROMPath[1024];
+	char		pwd[1024];
+	int			hIn;
+	char*		ROMShortName	= NULL;
+	UInt32		idex;
+	struct stat	Stat;
+
+	getcwd (pwd, sizeof (pwd));
+
+	snprintf (absoluteROMPath, sizeof (absoluteROMPath),
+	          "%s/.romeo", getenv ("HOME"));
+
+	memset(&Stat, 0, sizeof(Stat));
+	if (stat(absoluteROMPath, &Stat) || (! S_ISDIR(Stat.st_mode)))
+	{
+		/*
+		 * Missing .romeo directory - try to create it!
+		 */
+		if (mkdir ((const char*)absoluteROMPath, O_CREAT | 0700))
+		{
+			SysError("Error creating directory '%s'", absoluteROMPath);
+			return (-1);
+		}
+	}
+
+	for (idex = 0; idex < opt_files.optarg_cnt; idex++)
+	{
+		ROMShortName = strrchr (opt_files.optarg[idex], '/');
+		if (! ROMShortName)
+			ROMShortName = opt_files.optarg[idex];
+		else
+			ROMShortName++;
+
+		snprintf (absoluteROMPath, sizeof (absoluteROMPath),
+		          "%s/.romeo/%s", getenv ("HOME"), ROMShortName);
+		if (mkdir ((const char*) absoluteROMPath, O_CREAT | 0700))
+		{
+			if (errno != EEXIST)
+			{
+				SysError("Error creating directory '%s'", absoluteROMPath);
+				continue;
+			}
+		}
+
+		/********************************************************************
+		 * Process ROM
+		 */
+		hIn = open (opt_files.optarg[idex], O_RDONLY | O_BINARY);
+		if (hIn < 0)
+		{
+			SysError("Error opening ROM file '%s'", opt_files.optarg[idex]);
+			continue;
+		}
+	
+		opt_x.optidex  = 1;		// Extract
+		opt_xs.optidex = 1;		//     small ROM
+		opt_xl.optidex = 1;		//     large ROM
+		opt_xm.optidex = 1;		//     meta data
+
+		if (chdir (absoluteROMPath))
+		{
+			SysError("Cannot chdir into the holding directory '%s'",
+					 absoluteROMPath);
+		}
+		else
+		{
+			Extract (hIn, 0);
+		}
+
+		close   (hIn);
+	}
+
+	if (chdir (pwd))
+	{
+		SysError("Cannot chdir to '%s'", pwd);
+		return (-1);
+	}
+
+	return (0);
+}
+
+/*
+ * Given a ROM name, look for the META data and PRC files generated by RIP
+ * and rebuild that ROM.
+ */
+int	Rebuild	()
+{
+	char	ROMPath[1024];
+	char	pwd[1024];
+	int		hIn;
+	int		idex;
+	int		jdex;
+	int		nPRC;
+	int		hROMOut		= fileno(stdout);
+	char*	pHOME		= getenv("HOME");
+
+	if (opt_B.optarg_cnt < 1)
+	{
+		Usage("You must provide a ROM image name.");
+		return(-1);
+	}
+
+	getcwd (pwd, sizeof (pwd));
+
+	for (idex = 0; idex < opt_B.optarg_cnt; idex++)
+	{
+		char**		pPRCList;
+		ROMVersion*	pVersion;
+		ROMPtr		pROM;
+		char*		ROMShortName	= strrchr (opt_B.optarg[idex], '/');
+		if (! ROMShortName)
+			ROMShortName = opt_B.optarg[idex];
+		else
+			ROMShortName++;
+
+		pPRCList = NULL;
+		pVersion = NULL;
+		pROM     = NULL;
+
+		/*
+		 * Change to the META directory...
+		 */
+		snprintf (ROMPath, sizeof (ROMPath), "%s/.romeo/%s",
+		          pHOME, ROMShortName);
+		if (chdir (ROMPath))
+		{
+			SysError("Cannot chdir to '%s'", pwd);
+			continue;
+		}
+
+		/*******************************************************************
+		 * 1) make sure that we have everything we need in
+		 *    the target directory
+		 */
+		snprintf (ROMPath,sizeof(ROMPath), "%s.romeo", ROMShortName);
+		if ((hIn = open(ROMPath, O_RDONLY | O_BINARY)) < 0)
+		{
+			SysError("Cannot open META data file '%s'", ROMShortName);
+			continue;
+		}
+
+		pVersion = Read_MetaInfo(hIn);
+		close(hIn);
+		if (! pVersion)
+		{
+			SysError("Cannot read META data file '%s'", ROMShortName);
+			continue;
+		}
+
+		/*******************************************************************
+		 * 2) Create the ROM output file
+		 */
+		snprintf (ROMPath,sizeof(ROMPath), "%s/%s", pwd, ROMShortName);
+		if ((hROMOut = open(ROMPath, O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0666)) < 0)
+		{
+			SysError("Cannot open ROM output file '%s'", ROMShortName);
+			goto skip;
+		}
+
+		/*******************************************************************
+		 * 3) Construct and output the small-ROM
+		 */
+		pROM = InitializeROM(pVersion, RT_SMALL | pVersion->heap_flags);
+		if (! pROM)
+		{
+			SysError("Cannot create small ROM");
+			goto skip;
+		}
+
+		/* Place the names of our PRCs in a character array */
+		nPRC = 0;
+		for (jdex = 0; (pVersion->small_PRCList[jdex].type    != 0) &&
+		               (pVersion->small_PRCList[jdex].creator != 0); jdex++)
+		{
+			nPRC++;
+		}
+
+		pPRCList = (char**)malloc(nPRC * sizeof(char*));
+		if (! pPRCList)
+		{
+			SysError("Cannot allocate space for the PRC list");
+			goto skip;
+		}
+
+		for (jdex = 0; jdex < nPRC; jdex++)
+		{
+			pPRCList[jdex] = pVersion->small_PRCList[jdex].dbName;
+		}
+
+		if (AddPRCs (pROM, nPRC, pPRCList, 0) != nPRC)
+		{
+			SysError("Cannot add PRCs to small ROM");
+			goto skip;
+		}
+
+		if (! SetSystem(pROM))
+		{
+			SysError("Cannot set up small ROM boot code initialization vectors");
+			goto skip;
+		}
+
+		if (! WriteROM(pROM, hROMOut))
+		{
+			SysError("Cannot write small ROM");
+		}
+
+		/* Make sure we don't free our version information... */
+		pROM->pVersion = NULL;
+		FreeROM(pROM);
+
+		/*******************************************************************
+		 * 4) Construct and output the large-ROM
+		 * 
+		 * Place the names of our PRCs in a character array
+		 */
+		pROM = InitializeROM(pVersion, RT_LARGE | pVersion->heap_flags);
+		if (! pROM)
+		{
+			SysError("Cannot create small ROM");
+			goto skip;
+		}
+
+		/* Place the names of our PRCs in a character array */
+		nPRC = 0;
+		for (jdex = 0; (pVersion->big_PRCList[jdex].type    != 0) &&
+		               (pVersion->big_PRCList[jdex].creator != 0); jdex++)
+		{
+			nPRC++;
+		}
+
+		pPRCList = (char**)malloc(nPRC * sizeof(char*));
+		if (! pPRCList)
+		{
+			SysError("Cannot allocate space for the PRC list");
+			goto skip;
+		}
+
+		for (jdex = 0; jdex < nPRC; jdex++)
+		{
+			pPRCList[jdex] = pVersion->big_PRCList[jdex].dbName;
+		}
+
+		if (AddPRCs (pROM, nPRC, pPRCList, 0) != nPRC)
+		{
+			SysError("Cannot add PRCs to large ROM");
+			goto skip;
+		}
+
+		if (! WriteROM(pROM, hROMOut))
+		{
+			SysError("Cannot write large ROM");
+		}
+
+skip:
+		if (pROM)
+		{
+			if (pROM->pVersion == pVersion)
+				pVersion = NULL;
+			FreeROM(pROM);
+		}
+		if (pVersion)	FreeROMVersion(pVersion);
+		if (pPRCList)	free(pPRCList);
+	}
+
+	/*
+	 * Return to the original directory
+	 */
+	if (chdir (pwd))
+	{
+		SysError("Cannot chdir to '%s'", pwd);
+		return (-1);
+	}
+
+	return (0);
+
+#if	0
+	fprintf (stderr, "*** Rebuild is not yet implemented\n");
+	return (-1);
+
+	//
+	//-----------------------------------------------------------------------
+	//
+	char		absoluteROMPath[1024];
+
+	for (idex = 0; idex < opt_files.optarg_cnt; idex++)
+	{
+		ROMShortName = strrchr (opt_files.optarg[idex], '/');
+		if (! ROMShortName)
+			ROMShortName = opt_files.optarg[idex];
+		else
+			ROMShortName++;
+
+		snprintf (absoluteROMPath, sizeof (absoluteROMPath),
+		          "%s/.romeo/%s", getenv ("HOME"), ROMShortName);
+		if (mkdir ((const char*) absoluteROMPath, O_CREAT | 0700))
+		{
+			if (errno != EEXIST)
+			{
+				SysError("Error creating directory '%s'", absoluteROMPath);
+				continue;
+			}
+		}
+
+		/********************************************************************
+		 * Process ROM
+		 */
+		hIn = open (opt_files.optarg[idex], O_RDONLY | O_BINARY);
+		if (hIn < 0)
+		{
+			SysError("Error opening ROM file '%s'", opt_files.optarg[idex]);
+			continue;
+		}
+	
+		opt_x.optidex  = 1;		// Extract
+		opt_xs.optidex = 1;		//     small ROM
+		opt_xl.optidex = 1;		//     large ROM
+		opt_xm.optidex = 1;		//     meta data
+
+		if (chdir (absoluteROMPath))
+		{
+			SysError("Cannot chdir into the holding directory '%s'",
+					 absoluteROMPath);
+		}
+		else
+		{
+			Extract (hIn, 0);
+		}
+
+		close   (hIn);
+	}
+
+	//
+	//-----------------------------------------------------------------------
+	//
+	if (opt_as.optidex || hROMIn)
+	{
+		UInt16 flags = RT_SMALL;
+		flags = flags | (opt_an.optidex ? RT_NON_EZ : 0);
+
+		if (hROMIn)
+		{
+			pROM = ReadROM (hROMIn, flags);
+		}
+		else
+		{
+			UInt16 old_flags = 0;
+			if (opt_asp.optidex)
+			{
+				old_flags = pVersion->heap_flags;
+				pVersion->heap_flags = atoi (opt_asp.optarg[0]);
+			}
+			pROM = InitializeROM(pVersion, flags);
+			if (old_flags)
+				pVersion->heap_flags = old_flags;
+		}
+			
+		if (pROM)
+		{
+			if (AddPRCs (pROM, opt_as.optarg_cnt, opt_as.optarg, 0) != opt_as.optarg_cnt)
+			{
+				SysError("Cannot add PRCs to small ROM");
+				FreeROM (pROM);
+				return (0);
+			}
+
+			//Output_ROM(pROM, (UInt32)(pROM->pROM),
+			//           bShowNV, bShowHeap, bShowChunks,bShowDB);
+
+			fprintf (stderr, "\n");
+
+			if (opt_ash.optidex)
+				pROM->pCard->hdrVersion = atoi (opt_ash.optarg[0]);
+			if (! SetSystem(pROM))
+			{
+				SysError("Cannot set up small ROM boot code initialization vectors");
+				FreeROM (pROM);
+				return (0);
+			}
+
+			if (! WriteROM(pROM, hROMOut))
+			{
+				SysError("Cannot write small ROM");
+			}
+			fprintf (stderr, "\n");
+
+			FreeROM(pROM);
+		}
+		else if (! hROMIn)
+		{
+			SysError("Cannot create small ROM");
+		}
+	}
+		
+	if (opt_al.optidex || hROMIn)
+	{
+		UInt16 flags = RT_LARGE;
+		flags = flags | (opt_an.optidex ? RT_NON_EZ : 0);
+
+		if (hROMIn)
+		{
+			pROM = ReadROM (hROMIn, flags);
+		}
+		else
+		{
+			if (opt_alp.optidex)
+				pVersion->heap_flags = atoi (opt_alp.optarg[0]);
+			pROM = InitializeROM(pVersion, flags);
+		}
+
+		if (pROM)
+		{
+			if (opt_as.optidex)
+			{
+				pROM->File_base = pROM->pVersion->card_bigROMOffset;
+			}
+
+			if (AddPRCs (pROM, opt_al.optarg_cnt, opt_al.optarg, 0) != opt_al.optarg_cnt)
+			{
+				SysError("Cannot add PRCs to large ROM\n"
+				         "Try using -l:<size> to increase the available space");
+				FreeROM (pROM);
+				return (0);
+			}
+	
+			//Output_ROM(pROM, (UInt32)(pROM->pROM),
+			//           bShowNV, bShowHeap, bShowChunks,bShowDB);
+
+			fprintf (stderr, "\n");
+
+			if (opt_alh.optidex)
+				pROM->pCard->hdrVersion = atoi (opt_alh.optarg[0]);
+			if (opt_alp.optidex)
+				pROM->pVersion->heap_flags = atoi (opt_alp.optarg[0]);
+			if (! SetSystem(pROM))
+			{
+				SysError("Cannot set up large ROM boot code initialization vectors");
+				FreeROM (pROM);
+				return (0);
+			}
+
+			if (! WriteROM(pROM, hROMOut))
+			{
+				SysError("Cannot write large ROM");
+			}
+			fprintf (stderr, "\n");
+
+			FreeROM(pROM);
+		}
+		else if (hROMIn)
+		{
+			SysError("Cannot create large ROM");
+		}
+	}
+#endif
+}
+
 int	ViewROM()
 {
-	return Extract();
+	return Extract (-1, 1);
 }
 
 int	main	(int	argc,
@@ -866,14 +1679,23 @@ int	main	(int	argc,
 		return(1);
 	}
 
-	if (opt_a.optidex)
+	if (opt_version.optidex)
+		return Version(stdout);
+	else if (opt_a.optidex)
 		return Assemble();
+	else if (opt_X.optidex)
+		return RIP();
+	else if (opt_B.optidex)
+		return Rebuild();
+
+#if 0
 	else if (opt_r.optidex)
 		return ViewRAM();
+#endif
 	else if (opt_p.optidex)
 		return ViewPRC();
 	else if (opt_x.optidex)
-		return Extract();
+		return Extract (-1, 1);
 	else
 	{
 		if (! opt_v.optidex)

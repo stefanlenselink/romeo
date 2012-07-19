@@ -181,6 +181,7 @@ void	BS_StorageHeader	(StorageHeaderPtr	pStore)
 	pStore->dynHeapSpace		= BYTE_SWAP_32(pStore->dynHeapSpace);
 	pStore->firstRAMBlockSize	= BYTE_SWAP_32(pStore->firstRAMBlockSize);
 	BS_SysNVParams(&(pStore->nvParams));
+	pStore->initCodeOffset3		= BYTE_SWAP_32(pStore->initCodeOffset3);
 	pStore->crc					= BYTE_SWAP_32(pStore->crc);
 }
 

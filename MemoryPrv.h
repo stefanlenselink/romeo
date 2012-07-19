@@ -438,7 +438,12 @@ typedef struct {
 	
 	// Filler bytes - reserved for future use. Size adjusted to
 	// keep total size of storage header at 0x100 bytes.
-	UInt8			reserved[176-sizeof(SysNVParamsType)];		
+	UInt8			reserved[172-sizeof(SysNVParamsType)];		
+
+	// Pointer to System.prc boot.10003 record.  Since we are doing a clean
+	// room implementation, and since this field is not mentioned in the pose
+	// sources, we're winging it here.
+	UInt32		initCodeOffset3;
 
 	// CRC value
 	UInt32		crc;							// crc to check validity	

@@ -147,6 +147,8 @@ void	Relocate_StorageHeader	(StorageHeaderPtr	pStore,
 		pStore->firstRAMBlockSize = pStore->firstRAMBlockSize
 				+ newBase - oldBase;
 	Relocate_SysNVParams(&(pStore->nvParams), oldBase, newBase);
+	if (pStore->initCodeOffset3 != 0)
+		pStore->initCodeOffset3 = pStore->initCodeOffset3 + newBase - oldBase;
 }
 
 void	Relocate_HeapHeader		(MemHeapHeaderUnionType*	pHeader,

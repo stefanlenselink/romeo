@@ -25,6 +25,19 @@ void	FreeROM	(ROMPtr	pROM)
 	if (pROM->pContext)
 		free(pROM->pContext);
 
+	if (pROM->pVersion)
+	{
+		/*
+		 * Make sure we don't try to free one of the statically
+		 * allocated ROMVersion structures
+		 */
+		if ((pROM->pVersion < &(ROMVers[0]) ||
+		    (pROM->pVersion > (&(ROMVers[numROMVers])+sizeof(ROMVers[0])))))
+		{
+			FreeROMVersion(pROM->pVersion);
+		}
+	}
+
 	memset(pROM, 0, sizeof(*pROM));
 	free(pROM);
 }
@@ -57,6 +70,20 @@ void	FreePRCList	(PRCPtr*	pPRCList,
 	}
 
 	free(pPRCList);
+}
+
+/*
+ * Free a ROMVersion created by Read_MetaInfo
+ */
+void	FreeROMVersion	(ROMVersion*	pVersion)
+{
+	if (! pVersion)
+		return;
+
+	if (pVersion->small_PRCList)	free(pVersion->small_PRCList);
+	if (pVersion->big_PRCList)		free(pVersion->big_PRCList);
+
+	free(pVersion);
 }
 
 /*
@@ -301,6 +328,22 @@ RsrcEntryPtr	LocateResource	(DatabaseHdrPtr	pDB,
 	}
 
 	return (NULL);
+}
+
+char*			GetPalmOSVersion	(ROMPtr		pROM)
+{
+	DatabaseHdrPtr	pSysDB	= NULL;
+	RsrcEntryPtr	pVer	= NULL;
+	
+	/*
+	 * The version information is only in the large ROM
+	 */
+	if (! pROM->flags & RT_LARGE)
+		return 0;
+
+	pSysDB	= LocateDB (pROM->pDatabaseList, sysFileTSystem, sysFileCSystem, NULL);
+	pVer	= LocateResource (pSysDB, 'tver', 10000);
+	return (char*) pVer->localChunkID;
 }
 
 /* If pROM is not NULL, use the heap information within to

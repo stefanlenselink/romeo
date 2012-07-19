@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
 
 #include "os_structs.h"
 #include "rom.h"
@@ -9,12 +10,15 @@
 #include "byte_swap.h"
 #include "translate.h"
 #include "utils.h"
+#include "Crc.h"
 
 #define	ROM_BASE				0x10C00000
 #define PALMOS_1_SIZE			0x00080000
 #define PALMOS_1_BIG_ROM_OFFSET	0x00003000
 #define PALMOS_4_BIG_ROM_OFFSET	0x00008000
 
+#if 0
+/* This doesn't work */
 /*
  * Read in a Palm RAM, byte swap and relocate relative to the RAM buffer.
  */
@@ -121,6 +125,73 @@ ROMPtr	ReadRAM	(int	hROM,
 
 	return (pROM);
 }
+#endif
+
+/*
+ * Generate a CRC for the given ROM
+ *
+ * This assumes that the ROM is currently in Palm Order and none of the
+ * pointers are valid for our address space.
+ */
+static int	CheckCRC	(ROMPtr	pROM)
+{
+	// From Bank_ROM.cpp
+	// The checksum is the cumulative checksum of the ROM image before
+	// the stored checksum value and the ROM image following the checksum
+	// value.  First, calculate the first part.
+
+	//UInt32	chunkSize = offsetof (CardHeaderType, checksumValue);
+	UInt32	chunkSize;
+	UInt32	checksumBytes;
+	UInt16	checksumValue;
+	UInt16	origChecksum;
+
+	if (! pROM || ! pROM->pROM)
+		return(0);
+	
+	if (! pROM->pCard)
+ 		pROM->pCard = (CardHeaderPtr)(pROM->pROM);
+	
+	if (! pROM->pCard)
+		return(0);
+
+	checksumBytes = BYTE_SWAP_32(pROM->pCard->checksumBytes);
+
+	if ((checksumBytes < 1) || (checksumBytes > pROM->ROMSize))
+		return(0);
+
+	chunkSize = (UInt32)
+						&(pROM->pCard->checksumValue) - (UInt32)pROM->pCard;
+	checksumValue = Crc16CalcBigBlock (pROM->pROM, chunkSize, 0);
+
+	// Now calculate the second part.
+	checksumValue = Crc16CalcBigBlock (
+		pROM->pROM + chunkSize + sizeof (pROM->pCard->checksumValue),
+		checksumBytes - chunkSize - sizeof (pROM->pCard->checksumValue),
+		checksumValue);
+
+	origChecksum = BYTE_SWAP_16(pROM->pCard->checksumValue);
+
+	if (origChecksum != checksumValue)
+	{
+		fprintf (stderr, "*** Checksum over %ld bytes do NOT match:\n"
+		                 "***      orig 0x%x != 0x%x - invalid ROM! ***\n",
+		            checksumBytes,
+					origChecksum, checksumValue);
+		return (0);
+	}
+#ifdef	DEBUG
+	else
+	{
+		fprintf (stdout, "--- Checksum over %ld bytes match:\n"
+		                 "---      orig 0x%x != 0x%x - valid ROM! ---\n",
+		            checksumBytes,
+		            origChecksum, checksumValue);
+	}
+#endif	// DEBUG
+
+	return (1);	//checksumValue);
+}
 
 /*
  * Read in a Palm ROM, byte swap and relocate relative to the ROM buffer.
@@ -136,7 +207,10 @@ ROMPtr	ReadROM	(int	hROM,
 	ROMPtr				pROM		= NULL;
 
 	if (lseek(hROM, 0, SEEK_SET) != 0)
+	{
+		perror ("ReadROM");
 		return(NULL);
+	}
 
 	if (read(hROM, &Card, sizeof(Card)) != sizeof(Card))
 	{
@@ -144,6 +218,12 @@ ROMPtr	ReadROM	(int	hROM,
 	}
 
 	P2H_CardHeader   (&Card);
+	if (Card.bigROMOffset >= 0xF0C00000)
+	{
+		printf ("big big ROM offset\n");
+		Card.bigROMOffset -= 0xF0C00000;
+	}
+
 	if (Card.signature != sysCardSignature)
 	{
 		/* NOT a valid Card */
@@ -264,6 +344,21 @@ ROMPtr	ReadROM	(int	hROM,
 		return(0);
 	}
 
+#if 0
+	/*************************************************************
+	 * Before anything else, check the checksum
+	 */
+	if (! CheckCRC(pROM))
+		/* Checksum ERROR */
+		return (NULL);
+#else
+	/*
+	 * There are many reasons why a checksum might not match: several hacks and
+	 * flashpro modify the ROM without changing the checksum.
+	 */
+	CheckCRC(pROM);
+#endif
+
 	if (! Setup_ROM (pROM))
 		return (NULL);
 
@@ -292,14 +387,14 @@ ROMPtr	ReadROM	(int	hROM,
 
 	}
 
-	pROM->pVersion = GuessVersion (pROM);
+	pROM->pVersion = CollectVersion (pROM);
 	return (pROM);
 }
 
 /*
  * Copy a chunk into our buffer...
  */
-static UInt32	CopyChunk	(ROMPtr		pROM,
+static Int32	CopyChunk	(ROMPtr		pROM,
 							 LocalID	offset,
 							 char**		ppPRC,
 							 UInt32		nBytes)
@@ -314,7 +409,7 @@ static UInt32	CopyChunk	(ROMPtr		pROM,
 								LocateChunk(pROM->pHeapList, offset);
 	if (! pChunk)
 	{
-		return(0);
+		return(-1);
 	}
 
 	// the sizeAdj in the chunk header seems to indicate how many
@@ -324,7 +419,7 @@ static UInt32	CopyChunk	(ROMPtr		pROM,
 	pNewPRC = (char*)realloc(*ppPRC, nBytes + nSize);
 	if (! pNewPRC)
 	{
-		return(0);
+		return(-1);
 	}
 	*ppPRC = pNewPRC;
 
@@ -350,7 +445,7 @@ PRCPtr	ReadPRC		(char*	pFileName)
 	if (! pPRC)
 		return (NULL);
 	
-	if ((hPRC = open(pFileName, O_RDONLY)) < 0)
+	if ((hPRC = open(pFileName, O_RDONLY | O_BINARY)) < 0)
 	{
 		free (pPRC);
 		return(NULL);
@@ -393,7 +488,7 @@ int	WritePRC	(ROMPtr			pROM,
 {
 	UInt32			nBytes	= sizeof(DatabaseHdrType);
 	char*			pPRC	= NULL;
-	UInt32			nSize;
+	Int32			nSize;
 	char			FileName[dmDBNameLength + 8];
 	UInt32			hPRC;
 
@@ -415,24 +510,27 @@ int	WritePRC	(ROMPtr			pROM,
 	if (pDatabase->appInfoID != 0)
 	{
 		nSize = CopyChunk(pROM, pDatabase->appInfoID, &pPRC, nBytes);
-		if (! nSize)
+		if (nSize < 0)
 		{
 			free(pPRC);
 			return(0);
 		}
 
+		((DatabaseHdrPtr)pPRC)->appInfoID = nBytes;
 		nBytes += nSize;
 	}
 
 	if (pDatabase->sortInfoID != 0)
 	{
 		nSize = CopyChunk(pROM, pDatabase->sortInfoID, &pPRC, nBytes);
-		if (! nSize)
+		if (nSize < 0)
 		{
 			free(pPRC);
 			return(0);
 		}
 
+		((DatabaseHdrPtr)pPRC)->sortInfoID = nBytes;
+		
 		nBytes += nSize;
 	}
 
@@ -446,7 +544,7 @@ int	WritePRC	(ROMPtr			pROM,
 		for (idex = 0; idex < pDatabase->recordList.numRecords; idex++)
 		{
 			nSize = CopyChunk(pROM, pItem->localChunkID, &pPRC, nBytes);
-			if (! nSize)
+			if (nSize < 0)
 			{
 				free(pPRC);
 				return(0);
@@ -480,7 +578,7 @@ int	WritePRC	(ROMPtr			pROM,
 		for (idex = 0; idex < pDatabase->recordList.numRecords; idex++)
 		{
 			nSize = CopyChunk(pROM, pItem->localChunkID, &pPRC, nBytes);
-			if (! nSize)
+			if (nSize < 0)
 			{
 				free(pPRC);
 				return(0);
@@ -512,7 +610,7 @@ int	WritePRC	(ROMPtr			pROM,
 	// Finally, output to a file
 	sprintf (FileName, "%s.%s", pDatabase->name, 
 	         (IsResource(pDatabase) ? "prc" : "pdb"));
-	hPRC = open(FileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	hPRC = open(FileName, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
 	if (! hPRC)
 	{
 		free(pPRC);

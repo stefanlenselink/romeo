@@ -1,11 +1,17 @@
-#ifndef	__ROMS_350_rom_H__
-#define	__ROMS_350_rom_H__
-PRCIDType	small_PRC_ROMS_350_rom[]	= {
+/*
+ * Hacked together ordering file for 4.0 roms.  This isn't a complete
+ * ordering, but since this stuff will all probably go away eventually, I'm
+ * not going to work too hard on it.
+ */
+
+#ifndef	__ROMS_400_rom_H__
+#define	__ROMS_400_rom_H__
+PRCIDType	small_PRC_ROMS_400_rom[]	= {
                            {NNAME,        sysFileTBoot,       sysFileCSystem,0},
                            {NNAME,    sysFileTSmallHal,       sysFileCSystem,0},
                            {NNAME,0,0,0}
 };
-PRCIDType	large_PRC_ROMS_350_rom[]	= {
+PRCIDType	large_PRC_ROMS_400_rom[]	= {
                            {NNAME,      sysFileTSystem,       sysFileCSystem,0},
                            {NNAME,      sysFileTBigHal,       sysFileCSystem,0},
                            {NNAME,      sysFileTSplash,       sysFileCSystem,0},
@@ -31,7 +37,8 @@ PRCIDType	large_PRC_ROMS_350_rom[]	= {
                            {NNAME,      sysFileTKernel,       sysFileCSystem,0},
                            {NNAME,     sysFileTLibrary,sysFileCSerialWrapper,0},
                            {NNAME,  sysFileTUIAppShell,       sysFileCSystem,0},
-                           {NNAME, sysFileTApplication,     sysFileCLauncher,0},
+#if 0
+						   {NNAME, sysFileTApplication,     sysFileCLauncher,0},
                            {NNAME, sysFileTApplication,     sysFileCLauncher,1},
                            {NNAME, sysFileTApplication,  sysFileCPreferences,0},
                            {NNAME, sysFileTApplication,  sysFileCPreferences,1},
@@ -84,6 +91,7 @@ PRCIDType	large_PRC_ROMS_350_rom[]	= {
                            {NNAME,     sysFileTHtalLib,      sysFileCTCPHtal,0},
                            {NNAME, sysFileTApplication,        sysFileCSetup,0},
                            {NNAME, sysFileTApplication,        sysFileCSetup,1},
+#endif
                            {NNAME,0,0,0}
 };
-#endif	/* __ROMS_350_rom_H__ */
+#endif	/* __ROMS_400_rom_H__ */

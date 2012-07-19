@@ -124,16 +124,24 @@ __opt_parse		(parsed_opts*	pOpt,
 
 	if (! bHandled)
 	{
-		parsed_opts*	pSubOpts	= pOpt->subopts;
-		int	idex;
-
-		pOpt = NULL;
-		for (idex = 0; pSubOpts && ! NULL_OPT(pSubOpts[idex]); idex++)
+		/*
+		 * Check sub-options if this option has been seen...
+		 */
+		if ((pOpt) && (pOpt->status->optidex))
 		{
-			if ((pOpt = __opt_parse(&(pSubOpts[idex]), bShortArg,
-			                        nArg, argv, arg)) != NULL)
-				break;
+			parsed_opts*	pSubOpts	= pOpt->subopts;
+			int	idex;
+
+			pOpt = NULL;
+			for (idex = 0; pSubOpts && ! NULL_OPT(pSubOpts[idex]); idex++)
+			{
+				if ((pOpt = __opt_parse(&(pSubOpts[idex]), bShortArg,
+				                        nArg, argv, arg)) != NULL)
+					break;
+			}
 		}
+		else
+			pOpt = NULL;
 	}
 	else if (pOpt)
 	{

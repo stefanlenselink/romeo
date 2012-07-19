@@ -10,6 +10,7 @@ extern	void			FreeROM			(ROMPtr				pROM);
 extern	void			FreePRC			(PRCPtr				pPRC);
 extern	void			FreePRCList		(PRCPtr*			pPRCList,
 										 int				nItems);
+extern	void			FreeROMVersion	(ROMVersion*		pVersion);
 
 extern	int				CompareAddrs	(const void*		pAddr1,
 										 const void*		pAddr2);
@@ -40,6 +41,7 @@ extern	DatabaseHdrPtr	LocateDBOverlay	(DatabaseListPtr	pDBList,
 extern	RsrcEntryPtr	LocateResource	(DatabaseHdrPtr		pDB,
 										 UInt32				Type,
 										 UInt16				ID);
+extern	char*			GetPalmOSVersion (ROMPtr			pROM);
 extern	int SizeOfRecordContents		(ROMPtr				pROM,
 							 			 UInt32				highAddr,
 						 	 			 RecordListPtr		pRecordList,

@@ -7,7 +7,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+/*
+ * This Cygwin patch is due to Isaac Salzman
+ */
+#ifndef __CYGWIN
 #include <errno.h>
+#else
+#include <sys/errno.h>
+#define sys_errlist _sys_errlist
+#endif /* __CYGWIN */
 
 #include "SystemResources.h"
 #include "rom.h"
@@ -20,7 +29,7 @@
 #include "Crc.h"
 #include "byte_swap.h"
 
-#include "MemoryPrv.h"
+
 static void InitializeFreeChunk	(MemChunkHeaderUnionType*	pChunk,
 								 UInt16						version,
 								 UInt32						size)
@@ -232,6 +241,8 @@ ROMPtr	InitializeROM	(ROMVersion*	pVersion,
 	pROM->Card_base	= pVersion->ROM_base;
 	if (flags & RT_LARGE)
 		pROM->Card_base += pVersion->card_bigROMOffset;
+	if (flags & RT_NON_EZ)
+		pROM->Card_base -= 0x10000000;
 
 	pROM->File_base	= 0;
 
@@ -256,6 +267,8 @@ ROMPtr	InitializeROM	(ROMVersion*	pVersion,
 		pCard->signature				= sysCardSignature;
 		pCard->hdrVersion				= pVersion->card_hdrVersion;
 		pCard->flags					= pVersion->card_flags;
+		if (flags & RT_NON_EZ)
+			pCard->flags = 0x0010;
 		strncpy(pCard->name,			  pVersion->card_name,
 														sizeof(pCard->name));
 		strncpy(pCard->manuf,			  pVersion->card_manuf,
@@ -275,6 +288,9 @@ ROMPtr	InitializeROM	(ROMVersion*	pVersion,
 			pCard->readOnlyParmsOffset		= pVersion->card_readOnlyParmsOffset -
 				(pROM->Card_base - pROM->ROM_base) + (UInt32) pROM->pROM;
 											//0x00006000 + ((UInt32)pROM->pROM);
+			if (pROM->flags & RT_NON_EZ)
+				pCard->readOnlyParmsOffset	+= 0xF0000000;
+
 			pCard->bigROMOffset				= (UInt32)pROM->pROM;
 			if (flags & RT_SMALL)
 				pCard->bigROMOffset += pVersion->card_bigROMOffset;
@@ -313,6 +329,12 @@ ROMPtr	InitializeROM	(ROMVersion*	pVersion,
 		pStore->creationDate			= 0x00000000;
 		pStore->backupDate				= 0x00000000;
 		pStore->heapListOffset			= (UInt32)pROM->pHeapList;
+
+		if (pROM->pCard->hdrVersion > 0x0003)
+		{
+			pROM->pStore->nvParams.localeLanguage		= pVersion->nvparams_localeLanguage;
+			pROM->pStore->nvParams.localeCountry		= pVersion->nvparams_localeCountry;
+		}
 	}
 
 	/*
@@ -1122,7 +1144,6 @@ int	LayoutPRCs	(ROMPtr		pROM,
 	
 	if (! pROM || ! pPRCList || ! PRCNames)
 		return(1);
-
 	if (pROM->pDatabaseList)
 	{
 		oldNumDBs = pROM->pDatabaseList->numDatabases;
@@ -1130,14 +1151,12 @@ int	LayoutPRCs	(ROMPtr		pROM,
 				    sizeof (pROM->pDatabaseList->databaseOffset[0]);
 		listSize += oldListSize;
 	}
-	
 	if (pROM->flags & RT_LARGE)
 		layout = oldListSize ? pROM->pVersion->big_layout : 
 							   pROM->pVersion->big_addLayout;
 	else
 		layout = oldListSize ? pROM->pVersion->small_layout : 
 							   pROM->pVersion->small_addLayout;
-	
 	if (! layout)
 		layout = "D,dr+";
 
@@ -1156,7 +1175,6 @@ int	LayoutPRCs	(ROMPtr		pROM,
 		pROM->pStore->databaseDirID = 0;
 	}
 	pDBList->numDatabases += numPRCs;
-	
 	while (*group)
 	{
 		char*	star			= NULL;
@@ -1212,15 +1230,17 @@ int	LayoutPRCs	(ROMPtr		pROM,
 					case 'd':
 						if (! AddPRC (pROM, pDBList, pPRCList[idex],
 							  		  PR_HEADER,
-									  idex + oldNumDBs))
+									  idex + oldNumDBs)){
 							goto error;
+}
 						command++;
 						break;
 					case 'r':
 						if (! AddPRC (pROM, pDBList, pPRCList[idex],
 							  		  PR_RECORDS,
-									  idex + oldNumDBs))
+									  idex + oldNumDBs)){
 							goto error;
+}
 						command++;
 						break;
 					case '+':
@@ -1232,9 +1252,9 @@ int	LayoutPRCs	(ROMPtr		pROM,
 						break;
 					default:
 						pad = strtol (command, &badchar, 0);
-						if (badchar == command || pad < chunkHdrSize)
+						if (badchar == command || pad < chunkHdrSize){
 							goto error;
-	
+	}
 						pad -= chunkHdrSize;
 						(void)ROMalloc (pROM, pad, dmPadOwnerID);
 						command = badchar;
@@ -1256,8 +1276,9 @@ int	LayoutPRCs	(ROMPtr		pROM,
 								(DatabaseListPtr) ROMalloc (pROM, 
 															listSize, 
 															dmMgrOwnerID);
-						if (! pDBListTmp)
+						if (! pDBListTmp){
 							goto error;
+}
 							
 						memcpy (pDBListTmp, pDBList, listSize);
 						free (pDBList);
@@ -1275,14 +1296,16 @@ int	LayoutPRCs	(ROMPtr		pROM,
 				case '+':
 				case '-':
 					/* Premature '+' or '-'*/
-					if (command != star)
+					if (command != star){
 						goto error;
+}
 					command++;
 					break;
 				default:
 					pad = strtol (command, &badchar, 0);
-					if (badchar == command || pad < chunkHdrSize)
+					if (badchar == command || pad < chunkHdrSize){
 						goto error;
+}
 
 					pad -= chunkHdrSize;
 					(void)ROMalloc (pROM, pad, dmPadOwnerID);
@@ -1299,7 +1322,6 @@ int	LayoutPRCs	(ROMPtr		pROM,
 
 	/* In case of padding, set all the pad chunks to be free */
 	SetChunksFree (pROM, dmPadOwnerID);
-	
 	return(0);
 
 error:
@@ -1449,8 +1471,14 @@ int	WriteROM	(ROMPtr		pROM,
 	}
 	else
 	{
+		char* errmsg = strerror (errno);
+		if (errmsg)
 		fprintf (stderr, " ERROR %d - %s\n",
-		         errno, sys_errlist[errno]);
+			         errno, errmsg);
+		else
+			fprintf (stderr, " ERROR %d - Unknown error\n",
+			         errno);
+			
 	}
 
 leave:
@@ -1461,7 +1489,14 @@ leave:
 }
 
 /*
- * qsort comparison routine - sort by type.ctor
+ * qsort comparison routine - sort by type.ctor.name
+ *
+ * In order to duplicate the exact PRC ordering in PalmOS 4 roms
+ * we have a special case for when the names are of the form
+ * name_locale1COUNTRY1 and name_locale2COUNTRY2.  In this case, 
+ * sort by the locale and country, and the order on them is
+ * esES < deDE < itIT < frFR < enUS.  Numerically by language code, this is
+ * 4    < 2    < 3    < 1    < 0
  */
 int	CompareTypeCtor	(const void*	ppDB1,
 					 const void*	ppDB2)
@@ -1542,7 +1577,7 @@ int	LocateSplashes	(ROMPtr			pROM,
 
 /*
  * Given a ROM, use the incoming PRC name to setup the
- * initial stack, init 1&2 codes, reset vector, and HAL offset
+ * initial stack, init 1,2, and possibly 3 codes, reset vector, and HAL offset
  */
 int		SetSystem		(ROMPtr		pROM)
 {
@@ -1552,10 +1587,10 @@ int		SetSystem		(ROMPtr		pROM)
 	RsrcEntryPtr	pReset			= NULL;
 	RsrcEntryPtr	pInit1			= NULL;
 	RsrcEntryPtr	pInit2			= NULL;
+	RsrcEntryPtr	pInit3			= NULL;
 	RsrcEntryPtr	pHAL			= NULL;
 	RsrcEntryPtr	pBootSplash		= NULL;
 	RsrcEntryPtr	pResetSplash	= NULL;
-	UInt16			Locale			= 0;
 
 	UInt8*			pEntry			= "ENTRYPOI";
 	UInt32			size			= 0;
@@ -1602,10 +1637,12 @@ int		SetSystem		(ROMPtr		pROM)
 
 
 	/*
-	 * Locate the 3 boot resources in the System database
+	 * Locate the boot resources in the System database
 	 *	1)	'boot'	sysResIDBootReset		(10000)	- resetVector
 	 *	2)	'boot'	sysResIDBootInitCode	(10001)	- initCodeOffset1
 	 *	3)	'boot'	sysResIDBootInitCode+1	(10002)	- initCodeOffset2
+	 *	only in PalmOS 4.0 (card header version > 4):
+	 *	4)	'boot'	sysResIDBootInitCode+2	(10003)	- initCodeOffset3
 	 *
 	 * and the boot resource in the HAL
 	 *	4)	'boot'	sysResIDBootHAL			(19000) - halCodeOffset
@@ -1618,8 +1655,10 @@ int		SetSystem		(ROMPtr		pROM)
 	{
 		pInit1 = LocateResource(pSysDB, sysResTBootCode,sysResIDBootInitCode);
 		pInit2 = LocateResource(pSysDB, sysResTBootCode,sysResIDBootInitCode+1);
+		if (pROM->pCard->hdrVersion > 4 && (pROM->flags & RT_LARGE))
+			pInit3 = LocateResource(pSysDB, sysResTBootCode,sysResIDBootInitCode+2);
 
-		if (! pInit1 || ! pInit2)
+		if (! pInit1 || ! pInit2 || (pROM->pCard->hdrVersion > 4 && ! pInit3))
 			return(0);
 	}
 
@@ -1670,8 +1709,6 @@ int		SetSystem		(ROMPtr		pROM)
 
 		initStack = (UInt32) pStack - (UInt32) pROM->pCard;
 
-		/* How do we figure out what the Locale should be??? */
-		Locale    = 0x0017;
 	}
 	else
 	{
@@ -1690,7 +1727,7 @@ int		SetSystem		(ROMPtr		pROM)
 	 * before has a 1 in the high nibble -- none of the other addresses (heap
 	 * offset, big ROM offset, etc) are like this.
 	 */
-	if (pROM->pVersion && pROM->pVersion->palmOSVer <= 0x300)
+	if (pROM->pVersion && (pROM->pVersion->palmOSVer <= 0x300 || pROM->flags & RT_NON_EZ))
 		pROM->pCard->resetVector  += 0x10000000;
 
 	if (pInit1)
@@ -1699,19 +1736,24 @@ int		SetSystem		(ROMPtr		pROM)
 	if (pInit2)
 		pROM->pStore->initCodeOffset2 = pInit2->localChunkID;
 
+	if (pInit3)
+		pROM->pStore->initCodeOffset3 = pInit3->localChunkID;
+	
 	if (pHAL)
 		pROM->pCard->halCodeOffset = pHAL->localChunkID - (UInt32) pROM->pCard;
 
 	if (pBootSplash)
 		pROM->pStore->nvParams.splashScreenPtr		=
 										(void*)pBootSplash->localChunkID;
+	if (pROM->flags & RT_NON_EZ)
+		pROM->pStore->nvParams.splashScreenPtr		+= 0x10000000;
 			
 	if (pResetSplash)
 		pROM->pStore->nvParams.hardResetScreenPtr	=
 										(void*)pResetSplash->localChunkID;
+	if (pROM->flags & RT_NON_EZ)
+		pROM->pStore->nvParams.hardResetScreenPtr	+= 0x10000000;
 
-	if (Locale)
-		pROM->pStore->nvParams.localeCountry		= Locale;
 	
 
 	/*

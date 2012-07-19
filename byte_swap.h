@@ -37,7 +37,9 @@ extern void	P2H_OverlaySpec			(OmOverlaySpecType*			pOvly);
 							 ((((unsigned long) (n)) << 8) & 0x00FF0000) |	\
 							 ((((unsigned long) (n)) >> 8) & 0x0000FF00) |	\
 							  (((unsigned long) (n)) >> 24))
-
-#endif	// CPU_ENDIAN == CPU_ENDIAN_LITTLE
+#elif CPU_ENDIAN == CPU_ENDIAN_BIG
+#	define BYTE_SWAP_16(n)	(n)
+#	define BYTE_SWAP_32(n)	(n)
+#endif	// CPU_ENDIAN
 
 #endif	// __BYTE_SWAP_H__

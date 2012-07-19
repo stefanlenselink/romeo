@@ -4,7 +4,55 @@
 /********************************************************************
  * Elementary data types
  ********************************************************************/
-#include <endian.h>
+/*
+ * This Cygwin patch is due to Isaac Salzman
+ */
+#ifdef __CYGWIN
+#	include <sys/param.h>
+#	define __LITTLE_ENDIAN LITTLE_ENDIAN
+#	define __BIG_ENDIAN    BIG_ENDIAN
+#	define __BYTE_ORDER    BYTE_ORDER
+#elif sun
+#	include <sys/isa_defs.h>
+#else
+#	include <endian.h>
+#endif /* __CYGWIN */
+
+#ifdef sun
+#	include <sys/int_limits.h>
+#else
+#	include <stdint.h>
+#endif
+
+/*
+ * This O_BINARY patch was inspired by Mark Contois
+ */
+#ifndef	O_BINARY
+#	define	O_BINARY	0
+#endif	/* O_BINARY */
+
+/*Groan: some machines don't define these */
+#ifndef __LITTLE_ENDIAN
+#	define __LITTLE_ENDIAN 1234
+#endif
+#ifndef __BIG_ENDIAN
+#	define __BIG_ENDIAN    4321
+#endif
+#ifndef __PDP_ENDIAN
+#	define __PDP_ENDIAN    3412
+#endif
+
+#ifndef __BYTE_ORDER
+#	ifdef _LITTLE_ENDIAN
+#		define __BYTE_ORDER __LITTLE_ENDIAN
+#	endif
+#	ifdef _BIG_ENDIAN
+#		define __BYTE_ORDER __BIG_ENDIAN
+#	endif
+#	ifdef _PDP_ENDIAN
+#		define __BYTE_ORDER __PDP_ENDIAN
+#	endif
+#endif
 
 #define CPU_ENDIAN_LITTLE	__LITTLE_ENDIAN
 #define CPU_ENDIAN_BIG		__BIG_ENDIAN
