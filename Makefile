@@ -1,6 +1,6 @@
 CC		= gcc
 CFLAGS	= -Wall -g -m32
-LDFLAGS	= -L. -lromeo
+LDFLAGS	= -L. -lromeo -m32
 AR		= ar crv
 
 LIB		= libromeo.a
