@@ -1,5 +1,5 @@
 CC		= gcc
-CFLAGS	= -Wall -g 
+CFLAGS	= -Wall -g -m32
 LDFLAGS	= -L. -lromeo
 AR		= ar crv
 
