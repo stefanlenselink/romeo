@@ -8,8 +8,8 @@
 #include "byte_swap.h"
 
 
-static UInt8		_buf [4096];
-static UInt8		_hold[4096];
+static char		_buf [4096];
+static char		_hold[4096];
 
 // Defines for the different types of fields
 #define INT				1
@@ -87,7 +87,7 @@ static s_Field	romft[] = {
 // Locate the field with the given key/name
 //
 static
-s_Field*	FieldFinder (UInt8* key)
+s_Field*	FieldFinder (char* key)
 {
 	UInt32	idex;
 	for (idex = 0; idex < N_FIELDS; idex++)
@@ -105,8 +105,8 @@ s_Field*	FieldFinder (UInt8* key)
 //
 static
 Int32 String2Field	(void*	target,
-					 UInt8*	key,
-					 UInt8*	val)
+					 char*	key,
+					 char*	val)
 {
 	s_Field*	pField;
 	UInt32		ui32;
@@ -201,7 +201,7 @@ Int32 String2Field	(void*	target,
 			{
 				UInt32		nPRC	= 0;
 				UInt32		idex;
-				UInt8*		pPos	= val;
+				char*		pPos	= val;
 				PRCIDPtr	pPRCList	= NULL;
 				UInt8		ID[5];
 
@@ -245,7 +245,7 @@ Int32 String2Field	(void*	target,
 				memset(ID, 0, sizeof(ID));
 				for (idex = 0; idex < nPRC; idex++)
 				{
-					UInt8*	pStart;
+					char*	pStart;
 					UInt32	bytes	= sizeof(pPRCList[idex].dbName);
 					memset(pPRCList[idex].dbName, 0, bytes);
 
@@ -302,14 +302,14 @@ Int32 String2Field	(void*	target,
 static
 UInt32 Field2String	(ROMVersion*	pInfo,
 					 s_Field*		pField,
-					 UInt8*			buf)
+					 char*			buf)
 {
-	UInt8*	pData;
+	char*	pData;
 
 	if ((! pInfo) || (! pField) || (! buf))
 		return INVALID_PARAMS;
 
-	pData = (UInt8*)pInfo + pField->offset;
+	pData = (char*)pInfo + pField->offset;
 
 	switch (pField->type)
 	{
@@ -350,7 +350,7 @@ UInt32 Field2String	(ROMVersion*	pInfo,
 			if ((ppPRCList) && (*ppPRCList))
 			{
 				UInt32	swap;
-				UInt8	ID[5];
+				char	ID[5];
 				pPRCList = *ppPRCList;
 
 				memset(ID, 0, sizeof(ID));
@@ -411,10 +411,10 @@ UInt32 Field2String	(ROMVersion*	pInfo,
  * Trim a string - strip leading and trailing white-space
  */
 static
-UInt8*	_trim	(UInt8*	str)
+char*	_trim	(char*	str)
 {
-	UInt8*	pStart;
-	UInt8*	pEnd;
+	char*	pStart;
+	char*	pEnd;
 
 	if (! str)
 		return NULL;
@@ -454,10 +454,10 @@ UInt8*	_trim	(UInt8*	str)
 
 static
 Int32	_readln	(int	hIn,
-				 UInt8*	buf,
+				 char*	buf,
 				 UInt32	bufSize)
 {
-	UInt8*	pCur	= buf;
+	char*	pCur	= buf;
 	ssize_t	bytes;
 
 	if ((hIn < 0) || (! buf))
@@ -491,15 +491,15 @@ ROMVersion*	Read_MetaInfo	(int	hInfo)
 	ROMVersion	Info;
 	ROMVersion*	pInfo		= NULL;
 	ROMVersion*	pVers		= NULL;
-	UInt8*		pKey		= NULL;
-	UInt8*		pVal		= NULL;
+	char *		pKey		= NULL;
+	char *		pVal		= NULL;
 	UInt32		line		= 0;
 	Int32		bytes		= 0;
 	UInt32		res			= 0;
 	UInt8		bSomeFilled	= 0;
-	UInt8*		pBuf		= _buf;
-	UInt8*		pHold		= _hold;
-	UInt8*		pTmp		= NULL;
+	char *		pBuf		= _buf;
+	char *		pHold		= _hold;
+	char *		pTmp		= NULL;
 
 
 	memset(&Info, 0, sizeof(Info));
@@ -529,7 +529,7 @@ ROMVersion*	Read_MetaInfo	(int	hInfo)
 		{
 			if (strlen(pKey) + strlen(pHold) > sizeof(_buf))
 			{
-				fprintf (stderr, "*** Line too long (> %d characters) on line %ld\n",
+				fprintf (stderr, "*** Line too long (> %u characters) on line %ld\n",
 						 sizeof(_buf), line);
 
 				// Don't clear it out just yet so we can identify and ignore
@@ -555,7 +555,7 @@ ROMVersion*	Read_MetaInfo	(int	hInfo)
 			 * (which contains the full KEY), otherwise, ignore
 			 * the leading white-space by using pKey
 			 */
-			UInt8*	pEnd	= &(pBuf[strlen(pBuf)-1]);
+			char*	pEnd	= &(pBuf[strlen(pBuf)-1]);
 			pEnd--;
 			while ((pEnd > pBuf) && ((*pEnd == ' ') || (*pEnd == '/t')))
 				pEnd--;

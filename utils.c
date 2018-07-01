@@ -338,7 +338,7 @@ char*			GetPalmOSVersion	(ROMPtr		pROM)
 	/*
 	 * The version information is only in the large ROM
 	 */
-	if (! pROM->flags & RT_LARGE)
+	if (! (pROM->flags & RT_LARGE))
 		return 0;
 
 	pSysDB	= LocateDB (pROM->pDatabaseList, sysFileTSystem, sysFileCSystem, NULL);

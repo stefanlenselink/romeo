@@ -229,7 +229,7 @@ ROMPtr	InitializeROM	(ROMVersion*	pVersion,
 	}
 
 
-	pROM->pROM    = (char*)malloc(pROM->ROMSize);
+	pROM->pROM    = (UInt8*)malloc(pROM->ROMSize);
 	if (! pROM->pROM)
 	{
 		FreeROM(pROM);
@@ -1592,7 +1592,7 @@ int		SetSystem		(ROMPtr		pROM)
 	RsrcEntryPtr	pBootSplash		= NULL;
 	RsrcEntryPtr	pResetSplash	= NULL;
 
-	UInt8*			pEntry			= "ENTRYPOI";
+	char*			pEntry			= "ENTRYPOI";
 	UInt32			size			= 0;
 	UInt32			initStack		= 0;
 

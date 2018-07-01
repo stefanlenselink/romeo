@@ -85,7 +85,7 @@ typedef RecordListType*	RecordListPtr;
  * Structure of a Database Header
  *************************************************************/
 typedef struct {
-	UInt8			name[dmDBNameLength];	// name of database
+	char			name[dmDBNameLength];	// name of database
 	UInt16		attributes;					// database attributes
 	UInt16		version;						// version of database
 

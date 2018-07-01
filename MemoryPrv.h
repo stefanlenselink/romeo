@@ -372,8 +372,8 @@ typedef struct CardHeaderType {
 	UInt32		signature;					// must be sysCardSignature
 	UInt16		hdrVersion;					// header version
 	UInt16		flags;						// card flags;
-	UInt8			name[memMaxNameLen];		// card name
-	UInt8			manuf[memMaxNameLen];	// card manufacturer's name
+	char			name[memMaxNameLen];		// card name
+	char			manuf[memMaxNameLen];	// card manufacturer's name
 	UInt16		version;						// card version
 	UInt32		creationDate;				// card creation date
 	UInt16		numRAMBlocks;				// number of RAM blocks on card
@@ -415,7 +415,7 @@ typedef struct {
 	UInt32		signature;					// must be sysStoreSignature
 	UInt16		version;						// version of header
 	UInt16		flags;						// flags
-	UInt8			name[memMaxNameLen];		// name of store
+	char			name[memMaxNameLen];		// name of store
 	UInt32		creationDate;				// creation date
 	UInt32		backupDate;					// last backup date
 	UInt32		heapListOffset;			// offset to heap list for store

@@ -56,8 +56,8 @@ typedef struct {
 	char		big_layout[MAX_LAYOUT_LEN];		// layout of PRCs in the large ROM image
 	char		big_addLayout[MAX_LAYOUT_LEN];	// layout of PRCs added to existing ROM
 	
-	UInt8		card_name[memMaxNameLen];
-	UInt8		card_manuf[memMaxNameLen];
+	char		card_name[memMaxNameLen];
+	char		card_manuf[memMaxNameLen];
 	UInt32		card_initStack;
 	UInt16		card_hdrVersion;
 	UInt16		card_flags;
@@ -69,7 +69,7 @@ typedef struct {
 	UInt32		card_readWriteWorkingOffset;
 	UInt32		card_readWriteWorkingSize;
 	
-	UInt8		store_name[memMaxNameLen];
+	char		store_name[memMaxNameLen];
 	UInt16		store_version;
 	UInt16		store_flags;
 

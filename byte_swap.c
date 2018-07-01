@@ -32,6 +32,7 @@ void	BS_GenericList16 (void* pArray, UInt16 numEntries, UInt16 stepSize)
 
 	for (idex = 0; idex < numEntries; idex++)
 	{
+
 		*(UInt16*)pArray = (UInt16) BYTE_SWAP_16 (*(UInt16*)pArray);
 		pArray = (UInt8*)pArray + stepSize;
 	}
@@ -200,16 +201,11 @@ void	BS_HeapListList		(HeapListPtr	pHeapList, UInt16 nHeaps)
 
 void	BS_RecordListHeader	(RecordListPtr	pRecordList)
 {
-	UInt8*	pItem;
-
 	if (! pRecordList)
 		return;
 
-	pItem	= (UInt8*)(&(pRecordList->firstEntry));
-
 	pRecordList->nextRecordListID = BYTE_SWAP_32(pRecordList->nextRecordListID);
 	pRecordList->numRecords		  = BYTE_SWAP_16(pRecordList->numRecords);
-
 }
 
 /*
