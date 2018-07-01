@@ -458,32 +458,23 @@ MemChunkHeaderUnionType*
 	if (! pHeapHdr)
 		return(NULL);
 
-	if (memUHeapVer(pHeapHdr) > 2)
-	{
-		if (! pHeapHdr->header.ver3.firstFreeChunkOffset)
-			return(NULL);
+    /* We have to walk the chunk list to find the first free chunk */
+    UInt16	ver	= memUHeapVer(pHeapHdr);
+    pChunk = memUHeapFirstChunk (pHeapHdr, ver);
 
-		pChunk = (MemChunkHeaderUnionType*)((UInt8*)pHeapHdr +
-	                         (pHeapHdr->header.ver3.firstFreeChunkOffset << 1));
-	}
-	else
-	{
-		/* We have to walk the chunk list to find the first free chunk */
-		UInt16	ver	= memUHeapVer(pHeapHdr);
-		pChunk = memUHeapFirstChunk (pHeapHdr, ver);
+    ver = memUChunkVer(pHeapHdr);
+    while (! memUChunkIsTerminator(pChunk, ver) &&
+            ! memUChunkFree(pChunk,ver))
+    {
+        pChunk = (MemChunkHeaderUnionType*)((UInt8*)pChunk +
+                                                memUChunkSize(pChunk,ver));
+    }
 
-		ver = memUChunkVer(pHeapHdr);
-		while (! memUChunkIsTerminator(pChunk, ver) &&
-		       ! memUChunkFree(pChunk,ver))
-		{
-			pChunk = (MemChunkHeaderUnionType*)((UInt8*)pChunk +
-							                     memUChunkSize(pChunk,ver));
-		}
-
-		if (memUChunkIsTerminator(pChunk, ver))
-			/* We didn't find a free chunk */
-			pChunk = NULL;
-	}
+    if (memUChunkIsTerminator(pChunk, ver))
+    {
+        /* We didn't find a free chunk */
+        pChunk = NULL;
+    }
 
 	return(pChunk);
 }
@@ -1768,3 +1759,4 @@ int		SetSystem		(ROMPtr		pROM)
 	
 	return(1);
 }
+
