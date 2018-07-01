@@ -1,3 +1,7 @@
+Required Software on Ubuntu:
+
+sudo apt-get install build-essential gcc-multilib g++-multilib
+
 To compile:
 
 % make
